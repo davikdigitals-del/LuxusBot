@@ -76,7 +76,10 @@ before(() => {
   Conversation.prototype.save = async function () { db.conversations.set(String(this._id), this); return this; };
   Conversation.prototype.addMessage = function (role, content) { this.messages = this.messages || []; this.messages.push({ role, content }); };
   Conversation.findOne = async ({ sessionId, status }) => {
-    const found = [...db.conversations.values()].find(c => c.sessionId === sessionId && (!status || c.status === status));
+    const found = [...db.conversations.values()].find(c =>
+      c.sessionId === sessionId &&
+      (!status || (status.$ne ? c.status !== status.$ne : c.status === status))
+    );
     return found || null;
   };
   Conversation.findOneAndUpdate = async ({ sessionId }, update) => {
@@ -138,6 +141,23 @@ test('sessionId-only lookups (updateContext, addMessage, endSession) use the sec
   await sm.updateSessionActivity(session.sessionId);
 
   sm.getAllSessions = originalGetAll; // restore for cleanExpiredSessions-style callers elsewhere
+});
+
+test('addMessage keeps recording messages on escalated conversations but not resolved ones', async () => {
+  const sm = new SessionManager();
+  sm.useRedis = false;
+
+  const session = await sm.getOrCreateSession(objectId(), '15551234', { name: 'X' });
+  const conversation = [...db.conversations.values()].find((c) => c.sessionId === session.sessionId);
+  conversation.status = 'escalated';
+
+  await sm.addMessage(session.sessionId, 'user', 'Need a person');
+  assert.equal(conversation.messages.length, 1);
+  assert.equal(conversation.messages[0].content, 'Need a person');
+
+  conversation.status = 'resolved';
+  await sm.addMessage(session.sessionId, 'user', 'A later message');
+  assert.equal(conversation.messages.length, 1);
 });
 
 // ------------------------------------------------------------------ KnowledgeBase tenant isolation
