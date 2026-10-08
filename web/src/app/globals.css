@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  background-color: #FAF9F7;
+  color: #12151C;
+}
+
+* {
+  border-color: #E8E4DC;
+}
+
+/* Visible keyboard focus everywhere - never suppressed */
+:focus-visible {
+  outline: 2px solid #B8923F;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background-color: #D4B168;
+  color: #12151C;
+}

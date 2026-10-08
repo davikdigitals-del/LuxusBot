@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: whatsapp-assistant
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # These four override whatever's in .env - they point at the OTHER
+      # containers by service name, which only resolves inside this Docker
+      # network (never "localhost" - that's why .env's own defaults won't work here).
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongodb:27017/luxus
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+      - redis
+      - chromadb
+    volumes:
+      - ./whatsapp-session:/app/whatsapp-session
+      - ./logs:/app/logs
+      - ./knowledge:/app/knowledge
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+  mongodb:
+    image: mongo:latest
+    container_name: whatsapp-mongodb
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+  redis:
+    image: redis:alpine
+    container_name: whatsapp-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+  # Optional: ChromaDB for vector search
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: whatsapp-chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    restart: unless-stopped
+    networks:
+      - whatsapp-network
+
+volumes:
+  mongodb_data:
+  chroma_data:
+
+networks:
+  whatsapp-network:
+    driver: bridge

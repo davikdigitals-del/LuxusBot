@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Next.js / frontend build output
+web/.next/
+web/out/
+
+# API build output
+api/dist/
+api/build/
+
+# Environment files
+.env
+.env.*
+**/.env
+**/.env.*
+
+# Session / runtime data
+api/whatsapp-session/
+api/.wwebjs_auth/
+api/.wwebjs_cache/
+api/uploads/
+api/temp/
+api/logs/
+web/.next/
+
+# Logs
+*.log
+logs/
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Databases / caches
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+.cache/
+coverage/
+
+# Screenshots / local artifacts
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+Desktop-screenshot-*.png
