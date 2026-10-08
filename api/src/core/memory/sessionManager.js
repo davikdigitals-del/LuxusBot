@@ -270,7 +270,7 @@ class SessionManager {
    */
   async addMessage(sessionId, role, content, messageType = 'text', metadata = {}) {
     try {
-      const conversation = await Conversation.findOne({ sessionId, status: 'active' });
+      const conversation = await Conversation.findOne({ sessionId, status: { $ne: 'resolved' } });
 
       if (conversation) {
         conversation.addMessage(role, content, messageType, metadata);

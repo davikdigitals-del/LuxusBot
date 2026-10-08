@@ -51,6 +51,7 @@ class MessageHandler {
     // Hoisted so the catch block below can pass it to sendErrorResponse even
     // if the failure happens after the engine is resolved.
     let tenantContext = null;
+    let aiEngine = null;
 
     try {
       // Check if already processing a message from this user
@@ -65,19 +66,6 @@ class MessageHandler {
       }
 
       this.processingQueue.set(queueKey, true);
-
-      let engine;
-      try {
-        engine = await engineRegistry.getForBusiness(businessId);
-      } catch (error) {
-        logger.error(`Could not resolve engine for business ${businessId}:`, error.message);
-        this.processingQueue.delete(queueKey);
-        return;
-      }
-      // knowledgeBase isn't used directly here - it's already wired into
-      // aiEngine (constructed together in EngineRegistry) for RAG search.
-      const { aiEngine } = engine;
-      tenantContext = engine.tenantContext;
 
       // Log conversation
       conversationLogger.info('Incoming message', {
@@ -130,6 +118,17 @@ class MessageHandler {
       await this.memoryManager.addMessage(session.sessionId, 'user', processedMessage, messageType);
       await dispatchBusinessWebhook(businessId, 'message.received', { phoneNumber: contact.number, name: contact.name, content: processedMessage, messageType }).catch(() => {});
 
+      // Persist the inbound message before resolving tenant AI resources. A
+      // provider or knowledge-base setup failure must not hide received chats.
+      try {
+        const engine = await engineRegistry.getForBusiness(businessId);
+        // knowledgeBase is already wired into aiEngine for RAG search.
+        aiEngine = engine.aiEngine;
+        tenantContext = engine.tenantContext;
+      } catch (error) {
+        logger.error(`Could not resolve engine for business ${businessId}:`, error.message);
+      }
+
       // If this conversation has been handed off to a human agent, relay to
       // their WhatsApp instead of generating an AI reply. Falls through to
       // the normal AI path if the agent's session turns out to be offline.
@@ -163,6 +162,8 @@ class MessageHandler {
       if (await this.handleSpecialCommands(businessId, from, contact.name, processedMessage, session, tenantContext)) {
         return;
       }
+
+      if (!aiEngine) return;
 
       // Route to appropriate module
       const module = await this.moduleRouter.route(processedMessage, session);
