@@ -44,9 +44,5 @@ Thumbs.db
 coverage/
 
 # Screenshots / local artifacts
-*.png
-*.jpg
-*.jpeg
-*.gif
-*.svg
 Desktop-screenshot-*.png
+web/Database-Access-Cloud-MongoDB-Cloud-*.png
