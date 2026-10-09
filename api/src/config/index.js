@@ -138,15 +138,11 @@ const configSchema = Joi.object({
   trustProxy: Joi.boolean().default(false),
   enableLegacyWhatsApp: Joi.boolean().default(false),
   email: Joi.object({
-    provider: Joi.string().valid('smtp', 'gmail-api').default('smtp'),
     host: Joi.string().allow('').default(''),
     port: Joi.number().default(587),
     user: Joi.string().allow('').default(''),
     password: Joi.string().allow('').default(''),
     from: Joi.string().allow('').default(''),
-    googleClientId: Joi.string().allow('').default(''),
-    googleClientSecret: Joi.string().allow('').default(''),
-    googleRefreshToken: Joi.string().allow('').default(''),
   }),
 }).unknown();
 
@@ -268,15 +264,11 @@ const buildConfig = () => {
     trustProxy: process.env.TRUST_PROXY === 'true',
     enableLegacyWhatsApp: process.env.ENABLE_LEGACY_WHATSAPP === 'true',
     email: {
-      provider: process.env.EMAIL_PROVIDER,
       host: process.env.EMAIL_SMTP_HOST,
       port: process.env.EMAIL_SMTP_PORT ? num(process.env.EMAIL_SMTP_PORT) : undefined,
       user: process.env.EMAIL_SMTP_USER,
       password: process.env.EMAIL_SMTP_PASSWORD,
       from: process.env.EMAIL_FROM,
-      googleClientId: process.env.GMAIL_API_CLIENT_ID,
-      googleClientSecret: process.env.GMAIL_API_CLIENT_SECRET,
-      googleRefreshToken: process.env.GMAIL_API_REFRESH_TOKEN,
     },
   };
 
