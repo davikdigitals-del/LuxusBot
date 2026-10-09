@@ -5,6 +5,7 @@ import {
   createCheckoutSession, createPortalSession, getPublicPlans, startSignupCheckout,
   verifyLegacyWebhookSignature, handleLegacyPaymentEvent, verifyKoraSignature, handleKoraEvent,
 } from '../services/billingService.js';
+import googleAuthService from '../services/googleAuthService.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
@@ -33,6 +34,28 @@ router.post('/signup', authLimiters.register, async (req, res) => {
     res.json({ success: true, url });
   } catch (error) {
     logger.warn('Signup checkout error:', error.message);
+    res.status(400).json({ success: false, error: error.message || 'Could not start checkout' });
+  }
+});
+
+router.post('/google-signup', authLimiters.register, async (req, res) => {
+  try {
+    const { credential, firstName, lastName, businessName, plan } = req.body || {};
+    if (![credential, businessName, plan].every((value) => typeof value === 'string' && value.trim())) {
+      return res.status(400).json({ success: false, error: 'Google sign-in, business name, and plan are required' });
+    }
+
+    const profile = await googleAuthService.verifyCredential(credential);
+    const checkout = await startSignupCheckout({
+      email: profile.email,
+      firstName: typeof firstName === 'string' && firstName.trim() ? firstName : profile.firstName,
+      lastName: typeof lastName === 'string' && lastName.trim() ? lastName : profile.lastName,
+      businessName,
+      plan,
+    });
+    res.json({ success: true, url: checkout.url });
+  } catch (error) {
+    logger.warn('Google signup checkout error:', error.message);
     res.status(400).json({ success: false, error: error.message || 'Could not start checkout' });
   }
 });

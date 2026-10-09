@@ -1,6 +1,7 @@
 import express from 'express';
 import { User, Business } from '../models/index.js';
 import authService from '../services/authService.js';
+import googleAuthService from '../services/googleAuthService.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import { authLimiters } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
@@ -144,6 +145,24 @@ router.post('/login', authLimiters.login, async (req, res) => {
     res.status(401).json({
       success: false,
       error: error.message || 'Login failed'
+    });
+  }
+});
+
+router.post('/google', authLimiters.login, async (req, res) => {
+  try {
+    const result = await googleAuthService.login(
+      req.body?.credential,
+      req.ip || req.connection.remoteAddress,
+      req.headers['user-agent']
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    const status = error.message === 'Google sign-in is not configured' ? 503 : 401;
+    logger.warn('Google sign-in failed:', error.message);
+    res.status(status).json({
+      success: false,
+      error: status === 503 ? error.message : 'Google sign-in failed. Please try again.',
     });
   }
 });

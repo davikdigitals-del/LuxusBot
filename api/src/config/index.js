@@ -135,6 +135,9 @@ const configSchema = Joi.object({
 
   // Platform
   appUrl: Joi.string().uri().default('http://localhost:3001'),
+  google: Joi.object({
+    clientId: Joi.string().allow('').default(''),
+  }),
   trustProxy: Joi.boolean().default(false),
   enableLegacyWhatsApp: Joi.boolean().default(false),
   email: Joi.object({
@@ -265,6 +268,9 @@ const buildConfig = () => {
     },
 
     appUrl: process.env.APP_URL,
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+    },
     trustProxy: process.env.TRUST_PROXY === 'true',
     enableLegacyWhatsApp: process.env.ENABLE_LEGACY_WHATSAPP === 'true',
     email: {
