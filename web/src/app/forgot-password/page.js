@@ -9,7 +9,7 @@ import { IconMail, IconSpinner, IconCheck } from '@/components/icons';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -18,8 +18,8 @@ export default function ForgotPasswordPage() {
     setSubmitting(true);
     setError('');
     try {
-      await api.post('/api/auth/forgot-password', { email }, { skipAuth: true });
-      setSent(true);
+      const response = await api.post('/api/auth/forgot-password', { email }, { skipAuth: true });
+      setResult(response.registered === false ? 'unregistered' : response.registered === true ? 'sent' : 'unknown');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.');
     } finally {
@@ -29,16 +29,36 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthShell>
-      {sent ? (
+      {result ? (
         <div className="text-center">
-          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-signal-green/10 text-signal-green">
-            <IconCheck className="h-5 w-5" />
-          </span>
-          <h2 className="mt-4 font-display text-2xl text-ink-900">Check your inbox</h2>
-          <p className="mt-1.5 text-sm text-ink-600">
-            If an account exists for <span className="text-ink-800">{email}</span>, a reset link is on its way.
-          </p>
-          <Link href="/login" className="mt-6 inline-block text-sm font-medium text-brass-dark hover:underline">
+          {result === 'unregistered' ? (
+            <>
+              <h2 className="font-display text-2xl text-ink-900">Email not registered</h2>
+              <p className="mt-1.5 text-sm text-ink-600">
+                There is no account registered with <span className="text-ink-800">{email}</span>.
+              </p>
+            </>
+          ) : (
+            <>
+              {result === 'sent' && (
+                <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-signal-green/10 text-signal-green">
+                  <IconCheck className="h-5 w-5" />
+                </span>
+              )}
+              <h2 className="mt-4 font-display text-2xl text-ink-900">
+                {result === 'sent' ? 'Check your inbox' : 'Request received'}
+              </h2>
+              <p className="mt-1.5 text-sm text-ink-600">
+                {result === 'sent'
+                  ? <>A reset link has been sent to <span className="text-ink-800">{email}</span>.</>
+                  : <>If an account exists for <span className="text-ink-800">{email}</span>, a reset link is on its way.</>}
+              </p>
+            </>
+          )}
+          <Link
+            href="/login"
+            className="mt-6 inline-flex min-h-10 items-center justify-center rounded-md bg-ink-900 px-5 text-sm font-medium text-white transition hover:bg-ink-800"
+          >
             Back to sign in
           </Link>
         </div>
