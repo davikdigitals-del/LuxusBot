@@ -5,6 +5,7 @@ import {
   fetchLatestBaileysVersion,
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
+  normalizeMessageContent,
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { useMongoAuthState } from './mongoAuthState.js';
@@ -128,18 +129,60 @@ class BaileysSession {
     const selfJid = this.selfJid;
 
     for (const msg of messages) {
-      if (msg.key.remoteJid?.endsWith('@g.us')) continue;
-      if (msg.key.remoteJid?.endsWith('@g.us')) continue;
+      const remoteJid = msg.key?.remoteJid;
+      if (!remoteJid || remoteJid.endsWith('@g.us')) continue;
+      const senderJid = msg.key.remoteJidAlt?.endsWith('@s.whatsapp.net')
+        ? msg.key.remoteJidAlt
+        : remoteJid;
 
-      const text =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        msg.message?.videoMessage?.caption ||
-        '';
+      const content = normalizeMessageContent(msg.message);
+      let text = content?.conversation || content?.extendedTextMessage?.text || '';
+      let messageType = 'text';
+      let media = null;
 
-      if (!text) continue; // no plain-text content we handle yet (media without caption, reactions, etc.)
+      if (content?.imageMessage) {
+        messageType = 'image';
+        media = { caption: content.imageMessage.caption || '' };
+        text = text || content.imageMessage.caption || '[Image]';
+      } else if (content?.videoMessage || content?.ptvMessage) {
+        const video = content.videoMessage || content.ptvMessage;
+        messageType = 'video';
+        media = { caption: video.caption || '' };
+        text = text || video.caption || '[Video]';
+      } else if (content?.documentMessage) {
+        messageType = 'document';
+        media = { filename: content.documentMessage.fileName || 'document' };
+        text = text || `[Document: ${media.filename}]`;
+      } else if (content?.audioMessage) {
+        messageType = content.audioMessage.ptt ? 'ptt' : 'audio';
+        media = { mimetype: content.audioMessage.mimetype || '' };
+        text = text || (content.audioMessage.ptt ? '[Voice message]' : '[Audio message]');
+      } else if (content?.stickerMessage) {
+        messageType = 'sticker';
+        text = text || '[Sticker]';
+      } else if (content?.locationMessage || content?.liveLocationMessage) {
+        const location = content.locationMessage || content.liveLocationMessage;
+        messageType = 'location';
+        text = text || `[Location: ${location.name || 'Shared location'}${location.degreesLatitude != null && location.degreesLongitude != null
+          ? ` (${location.degreesLatitude}, ${location.degreesLongitude})`
+          : ''}]`;
+      } else if (content?.contactMessage || content?.contactsArrayMessage) {
+        messageType = 'contact';
+        text = text || '[Contact shared]';
+      } else if (content?.reactionMessage) {
+        messageType = 'reaction';
+        text = text || `[Reaction: ${content.reactionMessage.text || 'sent'}]`;
+      } else if (content?.conversation || content?.extendedTextMessage) {
+        messageType = 'text';
+      } else {
+        const contentType = Object.keys(content || {})[0] || 'unknown';
+        messageType = 'other';
+        text = `[${contentType === 'unknown' ? 'WhatsApp message' : contentType.replace(/Message$/, '')}]`;
+      }
 
+      logger.info(`Received WhatsApp message for ${this.key}`, {
+        messageType,
+      });
       this.eventBus.emit('message', {
         ownerType: this.ownerType,
         ownerId: this.ownerId,
@@ -148,11 +191,13 @@ class BaileysSession {
         // Yourself" thread, never any other chat on their personal number -
         // that's what lets HandoffService safely treat it as a reply-to-customer
         // without ever touching the agent's normal personal messages.
-        isSelfChat: !!selfJid && msg.key.remoteJid === selfJid,
-        remoteJid: msg.key.remoteJid,
+        isSelfChat: !!selfJid && remoteJid === selfJid,
+        remoteJid,
         messageKey: msg.key,
-        from: msg.key.remoteJid?.split('@')[0],
+        from: senderJid.split('@')[0],
         text,
+        type: messageType,
+        media,
         pushName: msg.pushName || '',
         timestamp: msg.messageTimestamp,
       });
@@ -229,3 +274,4 @@ class BaileysSession {
 }
 
 export default BaileysSession;
+export { BaileysSession };

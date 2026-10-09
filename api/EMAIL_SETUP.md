@@ -16,10 +16,10 @@ Set these variables on the **API** service, then redeploy:
 
 ```env
 EMAIL_PROVIDER=gmail-api
-EMAIL_SMTP_USER=your-sending-account@gmail.com
-EMAIL_FROM=Luxus Bot <your-sending-account@gmail.com>
-GMAIL_API_CLIENT_ID=your-google-oauth-client-id
-GMAIL_API_CLIENT_SECRET=your-google-oauth-client-secret
+EMAIL_SMTP_USER=davikdigitals@gmail.com
+EMAIL_FROM=Luxus Bot <davikdigitals@gmail.com>
+GMAIL_API_CLIENT_ID=698632990937-k5aqps42ojj959f7kietjoogk2r0f2nb.apps.googleusercontent.com
+GMAIL_API_CLIENT_SECRET=client_secret_698632990937-k5aqps42ojj959f7kietjoogk2r0f2nb.apps.googleusercontent.com.json
 GMAIL_API_REFRESH_TOKEN=your-google-oauth-refresh-token
 ```
 

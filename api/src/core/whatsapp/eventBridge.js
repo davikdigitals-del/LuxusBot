@@ -19,7 +19,8 @@ export function wireEventBridge(messageHandler) {
         await messageHandler.processMessage({
           from: evt.from,
           body: evt.text,
-          type: 'text',
+          type: evt.type,
+          media: evt.media,
           contact: { number: evt.from, name: evt.pushName || '', isMyContact: false },
           businessId: evt.ownerId,
           messageKey: evt.messageKey,

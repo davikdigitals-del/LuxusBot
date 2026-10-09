@@ -80,8 +80,8 @@ class MessageHandler {
       sessionRegistry.markRead('business', businessId, messageData.messageKey).catch(() => {});
 
       // Handle different message types
-      let processedMessage = body;
-      let messageType = 'text';
+      let processedMessage = body || '[WhatsApp message]';
+      let messageType = type === 'chat' ? 'text' : type;
 
       if (type === 'image' && messageData.media) {
         processedMessage = await this.handleImageMessage(messageData);
@@ -89,14 +89,18 @@ class MessageHandler {
       } else if (type === 'document' && messageData.media) {
         processedMessage = await this.handleDocumentMessage(messageData);
         messageType = 'document';
-      } else if (type === 'ptt' || type === 'audio') {
+      } else if (type === 'ptt' || type === 'audio' || type === 'voice') {
         processedMessage = await this.handleVoiceMessage(messageData);
         messageType = 'voice';
-      } else if (type !== 'text' && type !== 'chat') {
-        // Unsupported message type
-        await this.sendResponse(businessId, from, contact.name,
-          "I can currently handle text, images, and documents. Please send your message in one of these formats.");
-        return;
+      } else if (type === 'video') {
+        messageType = 'video';
+      } else if (type === 'location') {
+        messageType = 'location';
+      } else if (type === 'sticker' || type === 'contact' || type === 'reaction' || type === 'other') {
+        messageType = type;
+      } else if (type && type !== 'text' && type !== 'chat') {
+        logger.warn(`Unknown incoming WhatsApp message type "${type}", saving it as a generic message`, { businessId: String(businessId) });
+        messageType = 'other';
       }
 
       // Sanitize input
@@ -143,6 +147,12 @@ class MessageHandler {
         return; // finally block below still clears queueKey
       }
 
+      const failOver = async (reason) => {
+        const result = await handOffBecauseAiDown({ businessId, conversation: activeConversation, reason });
+        await this.memoryManager.addMessage(session.sessionId, 'assistant', result.notice);
+        await this.sendResponse(businessId, from, contact.name, result.notice);
+      };
+
       // Auto-route to the right team member (keyword rules / "I want a human").
       // If nobody suitable is online this does nothing and the AI answers as usual.
       const routing = await routeIfNeeded({ businessId, conversation: activeConversation, text: processedMessage });
@@ -163,7 +173,11 @@ class MessageHandler {
         return;
       }
 
-      if (!aiEngine) return;
+      if (!aiEngine) {
+        logger.warn('AI engine unavailable - passing inbound message to a live agent', { businessId: String(businessId) });
+        await failOver('AI engine unavailable');
+        return;
+      }
 
       // Route to appropriate module
       const module = await this.moduleRouter.route(processedMessage, session);
@@ -172,13 +186,6 @@ class MessageHandler {
       // Get context and conversation history
       const context = await this.memoryManager.getContext(session.sessionId);
       const conversationHistory = await this.memoryManager.getConversationHistory(session.sessionId);
-
-      // If the AI can't answer, pass the chat to a live agent instead of leaving the customer hanging
-      const failOver = async (reason) => {
-        const result = await handOffBecauseAiDown({ businessId, conversation: activeConversation, reason });
-        await this.memoryManager.addMessage(session.sessionId, 'assistant', result.notice);
-        await this.sendResponse(businessId, from, contact.name, result.notice);
-      };
 
       // Plan quota: each AI reply is counted; when it's used up the AI is not called (no cost incurred)
       const quota = await consumeAiMessage(businessId, { graceDays: config.billing.graceDays });
