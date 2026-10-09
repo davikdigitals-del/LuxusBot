@@ -119,7 +119,11 @@ class MessageHandler {
       });
 
       // Add message to conversation history
-      await this.memoryManager.addMessage(session.sessionId, 'user', processedMessage, messageType);
+      const savedConversation = await this.memoryManager.addMessage(session.sessionId, 'user', processedMessage, messageType);
+      logger.info(`Saved inbound WhatsApp message to conversation ${savedConversation._id}`, {
+        businessId: String(businessId),
+        messageType,
+      });
       await dispatchBusinessWebhook(businessId, 'message.received', { phoneNumber: contact.number, name: contact.name, content: processedMessage, messageType }).catch(() => {});
 
       // Persist the inbound message before resolving tenant AI resources. A

@@ -16,6 +16,9 @@ export function wireEventBridge(messageHandler) {
       if (evt.ownerType === 'business') {
         if (evt.remoteJid?.endsWith('@g.us')) return; // Exclude group chats from conversations and dashboard counts.
         if (evt.fromMe) return; // the assistant's own outgoing messages, not customer input
+        logger.info(`Routing inbound WhatsApp message for business:${evt.ownerId}`, {
+          messageType: evt.type || 'text',
+        });
         await messageHandler.processMessage({
           from: evt.from,
           body: evt.text,

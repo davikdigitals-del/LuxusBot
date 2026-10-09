@@ -15,6 +15,9 @@ const statusPayload = async (ownerType, ownerId) => {
     status: status.status,
     phoneNumber: status.phoneNumber,
     connectedAt: status.connectedAt,
+    lastDisconnectReason: status.lastDisconnectReason,
+    lastInboundAt: status.lastInboundAt,
+    lastInboundType: status.lastInboundType,
     qr: qrDataUrl,
   };
 };

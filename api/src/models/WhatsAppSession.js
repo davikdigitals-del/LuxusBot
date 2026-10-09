@@ -44,6 +44,8 @@ const whatsappSessionSchema = new mongoose.Schema({
   lastQRAt: Date,
   connectedAt: Date,
   lastDisconnectReason: String,
+  lastInboundAt: Date,
+  lastInboundType: String,
 }, {
   timestamps: true,
 });

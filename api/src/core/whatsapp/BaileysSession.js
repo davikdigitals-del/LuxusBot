@@ -41,6 +41,7 @@ class BaileysSession {
     this.sock = null;
     this.auth = null;
     this.connecting = false;
+    this.intentionalDisconnect = false;
   }
 
   get key() {
@@ -48,7 +49,7 @@ class BaileysSession {
   }
 
   async connect() {
-    if (this.connecting) return;
+    if (this.intentionalDisconnect || this.connecting || this.sock?.user) return;
     this.connecting = true;
 
     try {
@@ -77,7 +78,11 @@ class BaileysSession {
 
       this.sock.ev.on('creds.update', this.auth.saveCreds);
       this.sock.ev.on('connection.update', (update) => this.handleConnectionUpdate(update));
-      this.sock.ev.on('messages.upsert', (upsert) => this.handleMessagesUpsert(upsert));
+      this.sock.ev.on('messages.upsert', (upsert) => {
+        this.handleMessagesUpsert(upsert).catch((error) => {
+          logger.error(`Failed to process WhatsApp messages for ${this.key}:`, error);
+        });
+      });
     } catch (error) {
       logger.error(`Error connecting ${this.key}:`, error);
       this.connecting = false;
@@ -97,13 +102,19 @@ class BaileysSession {
     if (connection === 'open') {
       this.connecting = false;
       const phoneNumber = this.sock.user ? jidNormalizedUser(this.sock.user.id).split('@')[0] : null;
-      await this.setStatus('connected', { phoneNumber, connectedAt: new Date(), lastQR: null });
+      await this.setStatus('connected', {
+        phoneNumber,
+        connectedAt: new Date(),
+        lastQR: null,
+        lastDisconnectReason: null,
+      });
       logger.info(`WhatsApp connected: ${this.key} (${phoneNumber || 'unknown number'})`);
       this.eventBus.emit('connected', { ownerType: this.ownerType, ownerId: this.ownerId, phoneNumber });
     }
 
     if (connection === 'close') {
       this.connecting = false;
+      this.sock = null;
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = statusCode === DisconnectReason.loggedOut;
 
@@ -112,6 +123,8 @@ class BaileysSession {
         lastDisconnectReason: lastDisconnect?.error?.message || 'unknown',
       });
       this.eventBus.emit('disconnected', { ownerType: this.ownerType, ownerId: this.ownerId, loggedOut });
+
+      if (this.intentionalDisconnect) return;
 
       if (loggedOut) {
         logger.info(`WhatsApp logged out: ${this.key} - clearing stored session`);
@@ -123,7 +136,7 @@ class BaileysSession {
     }
   }
 
-  handleMessagesUpsert({ messages, type }) {
+  async handleMessagesUpsert({ messages, type }) {
     if (type !== 'notify') return;
 
     const selfJid = this.selfJid;
@@ -183,6 +196,20 @@ class BaileysSession {
       logger.info(`Received WhatsApp message for ${this.key}`, {
         messageType,
       });
+      const isSelfChat = !!selfJid && remoteJid === selfJid;
+      const shouldTrackActivity = this.ownerType === 'business'
+        ? !msg.key.fromMe
+        : msg.key.fromMe && isSelfChat;
+      if (shouldTrackActivity) {
+        try {
+          await WhatsAppSession.updateOne(
+            { ownerType: this.ownerType, ownerId: this.ownerId },
+            { $set: { lastInboundAt: new Date(), lastInboundType: messageType } }
+          );
+        } catch (error) {
+          logger.error(`Could not record inbound WhatsApp activity for ${this.key}:`, error);
+        }
+      }
       this.eventBus.emit('message', {
         ownerType: this.ownerType,
         ownerId: this.ownerId,
@@ -191,7 +218,7 @@ class BaileysSession {
         // Yourself" thread, never any other chat on their personal number -
         // that's what lets HandoffService safely treat it as a reply-to-customer
         // without ever touching the agent's normal personal messages.
-        isSelfChat: !!selfJid && remoteJid === selfJid,
+        isSelfChat,
         remoteJid,
         messageKey: msg.key,
         from: senderJid.split('@')[0],
@@ -241,10 +268,25 @@ class BaileysSession {
    * QR scan. Use for an "unlink my WhatsApp" action, never on server shutdown.
    */
   async disconnect() {
+    this.intentionalDisconnect = true;
     try {
       if (this.sock) {
-        await this.sock.logout().catch(() => {});
-        this.sock.end(undefined);
+        const socket = this.sock;
+        this.sock = null;
+        let timeout;
+        try {
+          await Promise.race([
+            socket.logout(),
+            new Promise((resolve) => {
+              timeout = setTimeout(resolve, 5000);
+            }),
+          ]);
+        } catch (error) {
+          logger.warn(`WhatsApp logout failed for ${this.key}: ${error.message}`);
+        } finally {
+          clearTimeout(timeout);
+          socket.end(undefined);
+        }
       }
     } finally {
       if (this.auth) await this.auth.clearState();

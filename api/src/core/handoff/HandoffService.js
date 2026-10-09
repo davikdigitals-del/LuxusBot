@@ -269,8 +269,19 @@ class HandoffService {
       `Type ${END_COMMANDS[0]} when you're done to hand the conversation back to the AI.`,
     ].filter(Boolean).join('\n');
 
-    await sessionRegistry.sendSelfMessage('agent', agent._id, text);
-    return true;
+    try {
+      await sessionRegistry.sendSelfMessage('agent', agent._id, text);
+      return true;
+    } catch (error) {
+      logger.error(`Could not notify agent ${agent._id} on WhatsApp for conversation ${conversation._id}:`, error);
+      conversation.transferNote = 'WhatsApp notification failed; review this assigned conversation in the dashboard';
+      try {
+        await conversation.save();
+      } catch (saveError) {
+        logger.error(`Could not record WhatsApp notification failure for conversation ${conversation._id}:`, saveError);
+      }
+      return false;
+    }
   }
 
   /**
@@ -302,7 +313,17 @@ class HandoffService {
       return false;
     }
 
-    await sessionRegistry.sendSelfMessage('agent', agent._id, `💬 ${fromName}: ${text}`);
+    try {
+      await sessionRegistry.sendSelfMessage('agent', agent._id, `💬 ${fromName}: ${text}`);
+    } catch (error) {
+      logger.error(`Could not relay customer message to agent ${agent._id} for conversation ${conversation._id}:`, error);
+      conversation.transferNote = 'WhatsApp notification failed; message remains available in the dashboard';
+      try {
+        await conversation.save();
+      } catch (saveError) {
+        logger.error(`Could not record failed WhatsApp relay for conversation ${conversation._id}:`, saveError);
+      }
+    }
     return true;
   }
 

@@ -186,7 +186,7 @@ class SessionManager {
       return conversation;
     } catch (error) {
       logger.error('Error creating conversation:', error);
-      return null;
+      throw error;
     }
   }
 
@@ -272,19 +272,22 @@ class SessionManager {
     try {
       const conversation = await Conversation.findOne({ sessionId, status: { $ne: 'resolved' } });
 
-      if (conversation) {
-        conversation.addMessage(role, content, messageType, metadata);
-
-        if (conversation.context) {
-          conversation.context.messageCount = conversation.messages.length;
-        }
-
-        await conversation.save();
+      if (!conversation) {
+        throw new Error(`No active conversation found for session ${sessionId}`);
       }
 
-      await this.updateContext(sessionId, { messageCount: conversation?.messages.length || 0 });
+      conversation.addMessage(role, content, messageType, metadata);
+
+      if (conversation.context) {
+        conversation.context.messageCount = conversation.messages.length;
+      }
+
+      await conversation.save();
+      await this.updateContext(sessionId, { messageCount: conversation.messages.length });
+      return conversation;
     } catch (error) {
       logger.error('Error adding message:', error);
+      throw error;
     }
   }
 

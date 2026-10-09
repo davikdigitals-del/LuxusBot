@@ -110,11 +110,21 @@ test('SessionRegistry.getStatus reads from Mongo even for a session not loaded i
   const registry = new SessionRegistry();
   const ownerId = String(objectId());
   await WhatsAppSession.updateOne({ ownerType: 'business', ownerId }, { $set: {} }); // no-op if missing, seed below instead
-  sessionDb.set(`business:${ownerId}`, { ownerType: 'business', ownerId, status: 'connected', phoneNumber: '15551234', lastQR: null });
+  sessionDb.set(`business:${ownerId}`, {
+    ownerType: 'business',
+    ownerId,
+    status: 'connected',
+    phoneNumber: '15551234',
+    lastQR: null,
+    lastInboundAt: new Date('2026-10-10T00:00:00.000Z'),
+    lastInboundType: 'text',
+  });
 
   const status = await registry.getStatus('business', ownerId);
   assert.equal(status.status, 'connected');
   assert.equal(status.phoneNumber, '15551234');
+  assert.equal(status.lastInboundAt.toISOString(), '2026-10-10T00:00:00.000Z');
+  assert.equal(status.lastInboundType, 'text');
 });
 
 test('SessionRegistry refreshes an existing QR by clearing the old session and reconnecting', async () => {
@@ -300,6 +310,29 @@ test('relayCustomerMessageIfHandedOff relays to a connected agent and returns tr
   assert.equal(relayed, true);
   assert.equal(sentSelfMessages.length, 1);
   assert.match(sentSelfMessages[0].text, /still there\?/);
+});
+
+test('relayCustomerMessageIfHandedOff keeps a failed WhatsApp relay visible in the dashboard', async () => {
+  const handoff = new HandoffService();
+  const agentId = objectId();
+  const conversation = makeConversation({ handoffMode: 'human', assignedAgent: agentId });
+  db.users.set(String(agentId), { _id: agentId });
+
+  const registryModule = (await import('../src/core/whatsapp/SessionRegistry.js')).default;
+  Object.assign(registryModule, {
+    ...fakeRegistry,
+    sendSelfMessage: async () => { throw new Error('agent socket unavailable'); },
+  });
+
+  const relayed = await handoff.relayCustomerMessageIfHandedOff({
+    businessId: conversation.businessId,
+    conversation,
+    fromName: 'Jane',
+    text: 'Can you help?',
+  });
+
+  assert.equal(relayed, true);
+  assert.match(conversation.transferNote, /WhatsApp notification failed/);
 });
 
 test('relayCustomerMessageIfHandedOff falls back to AI (returns false) when the agent is offline', async () => {

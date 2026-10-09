@@ -45,9 +45,7 @@ class SessionRegistry {
       this.sessions.set(k, session);
     }
 
-    if (!session.connecting) {
-      session.connect().catch((error) => logger.error(`SessionRegistry connect failed for ${k}:`, error));
-    }
+    session.connect().catch((error) => logger.error(`SessionRegistry connect failed for ${k}:`, error));
 
     return this.getStatus(ownerType, ownerId);
   }
@@ -85,6 +83,9 @@ class SessionRegistry {
       phoneNumber: doc.status === 'connected' ? doc.phoneNumber : null,
       qr: doc.status === 'qr' ? doc.lastQR : null,
       connectedAt: doc.connectedAt,
+      lastDisconnectReason: doc.lastDisconnectReason || null,
+      lastInboundAt: doc.lastInboundAt || null,
+      lastInboundType: doc.lastInboundType || null,
     };
   }
 
