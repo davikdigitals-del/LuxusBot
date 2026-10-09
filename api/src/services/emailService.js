@@ -1,6 +1,58 @@
 import nodemailer from 'nodemailer';
+import crypto from 'node:crypto';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
+
+const encodeMimeHeader = (value) => {
+  const text = String(value ?? '');
+  if (/[\r\n]/.test(text)) throw new Error('Email header contains an invalid line break');
+  return /^[\x20-\x7e]*$/.test(text)
+    ? text
+    : `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
+};
+
+const formatMailbox = (mailbox) => {
+  if (typeof mailbox === 'string') {
+    if (/[\r\n]/.test(mailbox)) throw new Error('Email address contains an invalid line break');
+    return mailbox;
+  }
+  if (!mailbox || typeof mailbox.address !== 'string') {
+    throw new Error('Invalid email address');
+  }
+  const address = formatMailbox(mailbox.address);
+  if (!mailbox.name) return address;
+  return `${encodeMimeHeader(mailbox.name)} <${address}>`;
+};
+
+const wrapBase64 = (value) => String(value).match(/.{1,76}/g)?.join('\r\n') || '';
+
+const buildMimeMessage = ({ from, to, subject, html, text, replyTo }) => {
+  const boundary = `luxusbot_${crypto.randomUUID()}`;
+  const lines = [
+    `From: ${formatMailbox(from)}`,
+    `To: ${formatMailbox(to)}`,
+    `Subject: ${encodeMimeHeader(subject)}`,
+  ];
+  if (replyTo) lines.push(`Reply-To: ${formatMailbox(replyTo)}`);
+  lines.push(
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrapBase64(Buffer.from(text || '', 'utf8').toString('base64')),
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrapBase64(Buffer.from(html || '', 'utf8').toString('base64')),
+    `--${boundary}--`,
+    '',
+  );
+  return lines.join('\r\n');
+};
 
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character) => ({
   '&': '&amp;',
@@ -11,20 +63,82 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
 })[character]);
 
 class EmailService {
-  constructor() {
-    // Create transporter
+  constructor({ email = config.email, appUrl = config.appUrl, fetchImpl = globalThis.fetch } = {}) {
+    this.email = email;
+    this.fetch = fetchImpl;
+    this.gmailAccessToken = null;
+    this.gmailAccessTokenExpiresAt = 0;
     this.transporter = nodemailer.createTransport({
-      host: config.email?.host || 'smtp.gmail.com',
-      port: config.email?.port || 587,
-      secure: config.email?.port === 465,
+      host: email?.host || 'smtp.gmail.com',
+      port: email?.port || 587,
+      secure: email?.port === 465,
       auth: {
-        user: config.email?.user,
-        pass: config.email?.password
+        user: email?.user,
+        pass: email?.password
       }
     });
 
-    this.from = config.email?.from || config.email?.user || config.company?.email || 'noreply@example.com';
-    this.appUrl = config.appUrl || 'http://localhost:3000';
+    this.from = email?.from || email?.user || config.company?.email || 'noreply@example.com';
+    this.appUrl = appUrl || 'http://localhost:3000';
+  }
+
+  isConfigured() {
+    if (!this.email?.user) return false;
+    if (this.email.provider === 'gmail-api') {
+      return Boolean(
+        this.email.googleClientId &&
+        this.email.googleClientSecret &&
+        this.email.googleRefreshToken
+      );
+    }
+    return Boolean(this.email.password);
+  }
+
+  async getGmailAccessToken() {
+    if (this.gmailAccessToken && this.gmailAccessTokenExpiresAt > Date.now() + 60_000) {
+      return this.gmailAccessToken;
+    }
+
+    const response = await this.fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: this.email.googleClientId,
+        client_secret: this.email.googleClientSecret,
+        refresh_token: this.email.googleRefreshToken,
+        grant_type: 'refresh_token',
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.access_token) {
+      const reason = result.error_description || result.error || `HTTP ${response.status}`;
+      throw new Error(`Gmail API token refresh failed: ${reason}`);
+    }
+
+    this.gmailAccessToken = result.access_token;
+    this.gmailAccessTokenExpiresAt = Date.now() + (Number(result.expires_in) || 3600) * 1000;
+    return this.gmailAccessToken;
+  }
+
+  async sendViaGmailApi(mailOptions) {
+    const accessToken = await this.getGmailAccessToken();
+    const raw = Buffer.from(buildMimeMessage(mailOptions), 'utf8').toString('base64url');
+    const response = await this.fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      const reason = result.error?.message || `HTTP ${response.status}`;
+      throw new Error(`Gmail API send failed: ${reason}`);
+    }
+    return result;
   }
 
   renderBrandedEmail({ preheader, title, body, button, footerNote }) {
@@ -65,10 +179,12 @@ class EmailService {
    */
   async sendEmail(to, subject, html, text, options = {}) {
     try {
-      // Skip if email not configured
-      if (!config.email?.user) {
-        logger.warn(`Email not configured. Would send to ${to}: ${subject}`);
-        return { message: 'Email service not configured' };
+      if (!this.isConfigured()) {
+        throw new Error(
+          this.email?.provider === 'gmail-api'
+            ? 'Gmail API email service is not configured; set EMAIL_SMTP_USER, GMAIL_API_CLIENT_ID, GMAIL_API_CLIENT_SECRET, and GMAIL_API_REFRESH_TOKEN'
+            : 'SMTP email service is not configured; set EMAIL_SMTP_USER and EMAIL_SMTP_PASSWORD'
+        );
       }
 
       const mailOptions = {
@@ -80,18 +196,20 @@ class EmailService {
         ...options,
       };
 
-      const info = await this.transporter.sendMail(mailOptions);
+      const info = this.email.provider === 'gmail-api'
+        ? await this.sendViaGmailApi(mailOptions)
+        : await this.transporter.sendMail(mailOptions);
       logger.info(`Email sent to ${to}: ${subject}`);
       
       return info;
     } catch (error) {
-      logger.error('Email send error:', error);
+      logger.error(`Email send error: ${error.message}`);
       throw error;
     }
   }
 
   async sendContactFormEmail({ name, email, topic, message }) {
-    if (!config.email?.user || !config.email?.password) {
+    if (!this.isConfigured()) {
       throw new Error('Email service is not configured');
     }
 
@@ -148,7 +266,7 @@ class EmailService {
    * Send password reset email
    */
   async sendPasswordResetEmail(email, token) {
-    if (!config.email?.user || !config.email?.password) {
+    if (!this.isConfigured()) {
       throw new Error('Email service is not configured');
     }
     const resetUrl = `${this.appUrl.replace(/\/+$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
@@ -169,7 +287,7 @@ class EmailService {
    * Send team invitation email
    */
   async sendTeamInvitation(email, { businessName, inviterName, role, department, inviteToken }) {
-    if (!config.email?.user) {
+    if (!this.isConfigured()) {
       throw new Error('Email service is not configured');
     }
     const inviteUrl = `${this.appUrl.replace(/\/+$/, '')}/accept-invitation?token=${encodeURIComponent(inviteToken)}`;
@@ -222,4 +340,5 @@ class EmailService {
   }
 }
 
+export { EmailService, buildMimeMessage };
 export default new EmailService();
