@@ -4,18 +4,38 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/AuthContext';
-import { ApiError } from '@/lib/api';
+import api, { ApiError } from '@/lib/api';
 import AuthShell from '@/components/AuthShell';
 import AuthField from '@/components/AuthField';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { IconMail, IconLock, IconSpinner } from '@/components/icons';
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, completeLogin, setPendingGoogleCredential } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const onGoogleCredential = async (credential) => {
+    setError('');
+    setSubmitting(true);
+    try {
+      const result = await api.post('/api/auth/google', { credential }, { skipAuth: true });
+      if (!result.registered) {
+        setPendingGoogleCredential(credential);
+        router.push('/register');
+        return;
+      }
+      await completeLogin(result);
+      router.push(result.requiresPayment ? '/dashboard/billing' : '/dashboard');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Google sign-in failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -82,6 +102,16 @@ export default function LoginPage() {
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
+
+      <div className="my-5 flex items-center gap-3 text-xs text-ink-600">
+        <span className="h-px flex-1 bg-stone-200" />
+        <span>or</span>
+        <span className="h-px flex-1 bg-stone-200" />
+      </div>
+      <GoogleSignInButton
+        onCredential={onGoogleCredential}
+        onError={setError}
+      />
 
       <p className="mt-8 text-center text-sm text-ink-600">
         New to Luxus Bot?{' '}

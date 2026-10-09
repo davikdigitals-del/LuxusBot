@@ -1,14 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import api, { ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/AuthContext';
 import AuthShell from '@/components/AuthShell';
 import AuthField from '@/components/AuthField';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 import { PLANS } from '@/lib/plans';
 import { IconBuilding, IconMail, IconSpinner, IconUser } from '@/components/icons';
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const {
+    completeLogin,
+    pendingGoogleCredential,
+    consumePendingGoogleCredential,
+  } = useAuth();
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -18,8 +27,40 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleCredential, setGoogleCredential] = useState('');
 
   const update = (name) => (event) => setForm((current) => ({ ...current, [name]: event.target.value }));
+
+  const onGoogleCredential = useCallback(async (credential) => {
+    setError('');
+    setSubmitting(true);
+    try {
+      const result = await api.post('/api/auth/google', { credential }, { skipAuth: true });
+      if (result.registered) {
+        await completeLogin(result);
+        router.push(result.requiresPayment ? '/dashboard/billing' : '/dashboard');
+        return;
+      }
+
+      setGoogleCredential(credential);
+      setForm((current) => ({
+        ...current,
+        email: result.profile.email,
+        firstName: result.profile.firstName || current.firstName,
+        lastName: result.profile.lastName || current.lastName,
+      }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Google sign-in failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }, [completeLogin, router]);
+
+  useEffect(() => {
+    if (!pendingGoogleCredential) return;
+    const credential = consumePendingGoogleCredential();
+    if (credential) onGoogleCredential(credential);
+  }, [consumePendingGoogleCredential, onGoogleCredential, pendingGoogleCredential]);
 
   const onSubmit = async (event) => {
     event.preventDefault();
@@ -27,7 +68,15 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      const result = await api.post('/api/billing/signup', form, { skipAuth: true });
+      const result = googleCredential
+        ? await api.post('/api/billing/google-signup', {
+          credential: googleCredential,
+          firstName: form.firstName,
+          lastName: form.lastName,
+          businessName: form.businessName,
+          plan: form.plan,
+        }, { skipAuth: true })
+        : await api.post('/api/billing/signup', form, { skipAuth: true });
       window.location.href = result.url;
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not start payment. Please try again.');
@@ -56,7 +105,21 @@ export default function RegisterPage() {
           <AuthField label="Last name" autoComplete="family-name" required value={form.lastName} onChange={update('lastName')} />
         </div>
         <AuthField label="Business name" icon={IconBuilding} autoComplete="organization" required value={form.businessName} onChange={update('businessName')} />
-        <AuthField label="Email" icon={IconMail} type="email" autoComplete="email" required value={form.email} onChange={update('email')} />
+        <AuthField
+          label="Email"
+          icon={IconMail}
+          type="email"
+          autoComplete="email"
+          required
+          readOnly={Boolean(googleCredential)}
+          value={form.email}
+          onChange={update('email')}
+        />
+        {googleCredential && (
+          <p className="-mt-2 text-xs text-ink-600">
+            Google verified this address. Select a plan and complete payment to create your account.
+          </p>
+        )}
 
         <div>
           <label htmlFor="plan" className="mb-1.5 block text-sm text-ink-800">Plan</label>
@@ -84,6 +147,16 @@ export default function RegisterPage() {
           {submitting ? 'Opening secure checkout…' : `Pay $${selectedPlan.price} and create account`}
         </button>
       </form>
+
+      <div className="my-5 flex items-center gap-3 text-xs text-ink-600">
+        <span className="h-px flex-1 bg-stone-200" />
+        <span>or</span>
+        <span className="h-px flex-1 bg-stone-200" />
+      </div>
+      <GoogleSignInButton
+        onCredential={onGoogleCredential}
+        onError={setError}
+      />
 
       <p className="mt-7 text-center text-sm text-ink-600">
         Already have an account?{' '}

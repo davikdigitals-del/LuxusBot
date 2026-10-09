@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
   const [businesses, setBusinesses] = useState([]);
   const [currentBusinessId, setCurrentBusinessId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pendingGoogleCredential, setPendingGoogleCredential] = useState('');
   const router = useRouter();
 
   const loadSession = useCallback(async () => {
@@ -46,12 +47,22 @@ export function AuthProvider({ children }) {
     loadSession();
   }, [loadSession]);
 
-  const login = useCallback(async (email, password) => {
-    const data = await api.post('/api/auth/login', { email, password }, { skipAuth: true });
+  const completeLogin = useCallback(async (data) => {
     authStorage.setTokens(data.token, data.refreshToken);
     await loadSession();
     return data;
   }, [loadSession]);
+
+  const consumePendingGoogleCredential = useCallback(() => {
+    const credential = pendingGoogleCredential;
+    setPendingGoogleCredential('');
+    return credential;
+  }, [pendingGoogleCredential]);
+
+  const login = useCallback(async (email, password) => {
+    const data = await api.post('/api/auth/login', { email, password }, { skipAuth: true });
+    return completeLogin(data);
+  }, [completeLogin]);
 
   const logout = useCallback(() => {
     authStorage.clear();
@@ -86,6 +97,10 @@ export function AuthProvider({ children }) {
     currentRole,
     loading,
     login,
+    completeLogin,
+    pendingGoogleCredential,
+    setPendingGoogleCredential,
+    consumePendingGoogleCredential,
     logout,
     switchBusiness,
     updateUser,
