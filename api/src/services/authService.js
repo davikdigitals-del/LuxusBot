@@ -204,9 +204,9 @@ class AuthService {
       const user = await User.findByEmail(email);
       
       if (!user) {
-        // Don't reveal if email exists
         return {
-          message: 'If your email is registered, you will receive a password reset link'
+          registered: false,
+          message: 'Email is not registered'
         };
       }
 
@@ -229,6 +229,7 @@ class AuthService {
       logger.info(`Password reset requested: ${user.email}`);
 
       return {
+        registered: true,
         message: 'If your email is registered, you will receive a password reset link'
       };
     } catch (error) {
