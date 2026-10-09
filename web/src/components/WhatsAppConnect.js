@@ -33,12 +33,7 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
     }
   }, [statusUrl]);
 
-  useEffect(() => {
-    fetchStatus();
-    return () => clearInterval(pollRef.current);
-  }, [fetchStatus]);
-
-  const startPolling = () => {
+  const startPolling = useCallback(() => {
     clearInterval(pollRef.current);
     const startedAt = Date.now();
     pollRef.current = setInterval(async () => {
@@ -50,7 +45,18 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
         setError('WhatsApp did not provide a QR code. Please try again.');
       }
     }, 2000);
-  };
+  }, [fetchStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStatus().then((data) => {
+      if (!cancelled && data?.status === 'connecting') startPolling();
+    });
+    return () => {
+      cancelled = true;
+      clearInterval(pollRef.current);
+    };
+  }, [fetchStatus, startPolling]);
 
   const onConnect = async () => {
     setBusy(true);
@@ -63,6 +69,26 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
       startPolling();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not start the connection.');
+      await fetchStatus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResetAndReconnect = async () => {
+    if (!window.confirm('Reset this WhatsApp link? You will need to scan a new QR code.')) return;
+
+    setBusy(true);
+    setError('');
+    clearInterval(pollRef.current);
+    try {
+      await api.delete(disconnectUrl);
+      setState({ status: 'disconnected', qr: null, phoneNumber: null });
+      const result = await api.post(connectUrl);
+      setState(result);
+      startPolling();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reset the WhatsApp connection.');
       await fetchStatus();
     } finally {
       setBusy(false);
@@ -95,6 +121,10 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
         </div>
         {state.status === 'connected' ? (
           <Button className="w-full sm:w-auto" variant="danger" onClick={onDisconnect} disabled={busy}>Disconnect</Button>
+        ) : state.status === 'connecting' ? (
+          <Button className="w-full sm:w-auto" variant="danger" onClick={onResetAndReconnect} disabled={busy}>
+            {busy ? 'Resetting…' : 'Reset & reconnect'}
+          </Button>
         ) : (
           <Button className="w-full sm:w-auto" onClick={onConnect} disabled={busy || state.status === 'connecting'}>
             {state.status === 'qr' ? 'Refresh QR' : 'Connect'}
