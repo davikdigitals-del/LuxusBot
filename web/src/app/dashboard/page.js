@@ -61,7 +61,13 @@ export default function DashboardOverview() {
   if (loading) return <p className="text-sm text-ink-600">Loading…</p>;
 
   const hour = localTime?.getHours();
-  const timeGreeting = hour === undefined ? 'Welcome' : hour >= 5 && hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const timeGreeting = hour === undefined
+    ? 'Welcome'
+    : hour < 12
+      ? 'Good morning'
+      : hour < 17
+        ? 'Good afternoon'
+        : 'Good evening';
   const firstName = user?.firstName?.trim();
 
   return (
