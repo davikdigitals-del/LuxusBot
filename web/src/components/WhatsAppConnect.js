@@ -40,10 +40,14 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
 
   const startPolling = () => {
     clearInterval(pollRef.current);
+    const startedAt = Date.now();
     pollRef.current = setInterval(async () => {
       const data = await fetchStatus();
-      if (data && (data.status === 'connected' || data.status === 'disconnected')) {
+      if (data && (data.status === 'connected' || data.status === 'qr')) {
         clearInterval(pollRef.current);
+      } else if (Date.now() - startedAt >= 120000) {
+        clearInterval(pollRef.current);
+        setError('WhatsApp did not provide a QR code. Please try again.');
       }
     }, 2000);
   };
@@ -51,12 +55,15 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
   const onConnect = async () => {
     setBusy(true);
     setError('');
+    const refreshing = state.status === 'qr';
+    if (refreshing) setState((current) => ({ ...current, status: 'connecting', qr: null }));
     try {
-      await api.post(connectUrl);
-      await fetchStatus();
+      const result = await api.post(connectUrl, refreshing ? { refresh: true } : undefined);
+      setState(result);
       startPolling();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not start the connection.');
+      await fetchStatus();
     } finally {
       setBusy(false);
     }

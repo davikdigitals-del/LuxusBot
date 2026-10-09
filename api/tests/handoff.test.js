@@ -117,6 +117,39 @@ test('SessionRegistry.getStatus reads from Mongo even for a session not loaded i
   assert.equal(status.phoneNumber, '15551234');
 });
 
+test('SessionRegistry refreshes an existing QR by clearing the old session and reconnecting', async () => {
+  const registry = new SessionRegistry();
+  const ownerId = String(objectId());
+  const key = registry.key('agent', ownerId);
+  sessionDb.set(key, { ownerType: 'agent', ownerId, status: 'qr', lastQR: 'expired-qr' });
+  let disconnected = false;
+  let reconnected = false;
+  registry.sessions.set(key, { disconnect: async () => { disconnected = true; } });
+  registry.connect = async (ownerType, id) => {
+    assert.equal(ownerType, 'agent');
+    assert.equal(String(id), ownerId);
+    reconnected = true;
+    return { status: 'connecting' };
+  };
+
+  const status = await registry.refreshQr('agent', ownerId);
+  assert.deepEqual(status, { status: 'connecting' });
+  assert.equal(disconnected, true);
+  assert.equal(reconnected, true);
+  assert.equal(registry.sessions.has(key), false);
+});
+
+test('SessionRegistry refuses to QR-refresh a connected session', async () => {
+  const registry = new SessionRegistry();
+  const ownerId = String(objectId());
+  sessionDb.set(`agent:${ownerId}`, { ownerType: 'agent', ownerId, status: 'connected' });
+
+  await assert.rejects(
+    () => registry.refreshQr('agent', ownerId),
+    /QR code can only be refreshed while waiting to scan/
+  );
+});
+
 test('sendMessage/sendSelfMessage throw a clear error when no session is loaded (never silently no-op)', async () => {
   const registry = new SessionRegistry();
   await assert.rejects(() => registry.sendMessage('business', 'nope', 'x@s.whatsapp.net', 'hi'), /No active WhatsApp session/);

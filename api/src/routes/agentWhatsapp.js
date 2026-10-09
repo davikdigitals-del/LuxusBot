@@ -15,9 +15,16 @@ const router = express.Router();
  */
 router.post('/whatsapp/connect', authenticate, async (req, res) => {
   try {
-    await sessionRegistry.connect('agent', req.userId);
+    if (req.body?.refresh === true) {
+      await sessionRegistry.refreshQr('agent', req.userId);
+    } else {
+      await sessionRegistry.connect('agent', req.userId);
+    }
     res.json({ success: true, ...(await statusPayload('agent', req.userId)) });
   } catch (error) {
+    if (error.message === 'A QR code can only be refreshed while waiting to scan it') {
+      return res.status(409).json({ success: false, error: error.message });
+    }
     logger.error('Error connecting agent WhatsApp:', error);
     res.status(500).json({ success: false, error: 'Failed to start WhatsApp connection' });
   }

@@ -27,9 +27,16 @@ const statusPayload = async (ownerType, ownerId) => {
  */
 router.post('/:id/whatsapp/connect', authenticate, requireBusiness, requireRole('admin', 'owner'), async (req, res) => {
   try {
-    await sessionRegistry.connect('business', req.businessId);
+    if (req.body?.refresh === true) {
+      await sessionRegistry.refreshQr('business', req.businessId);
+    } else {
+      await sessionRegistry.connect('business', req.businessId);
+    }
     res.json({ success: true, ...(await statusPayload('business', req.businessId)) });
   } catch (error) {
+    if (error.message === 'A QR code can only be refreshed while waiting to scan it') {
+      return res.status(409).json({ success: false, error: error.message });
+    }
     logger.error('Error connecting business WhatsApp:', error);
     res.status(500).json({ success: false, error: 'Failed to start WhatsApp connection' });
   }

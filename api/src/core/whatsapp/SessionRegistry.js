@@ -52,6 +52,24 @@ class SessionRegistry {
     return this.getStatus(ownerType, ownerId);
   }
 
+  async refreshQr(ownerType, ownerId) {
+    const status = await this.getStatus(ownerType, ownerId);
+    if (status.status !== 'qr') {
+      throw new Error('A QR code can only be refreshed while waiting to scan it');
+    }
+
+    const k = this.key(ownerType, ownerId);
+    const session = this.sessions.get(k);
+    if (session) {
+      await session.disconnect();
+      this.sessions.delete(k);
+    } else {
+      await WhatsAppSession.deleteOne({ ownerType, ownerId: String(ownerId) });
+    }
+
+    return this.connect(ownerType, ownerId);
+  }
+
   /**
    * Reads from Mongo (not just the in-memory map) so it's correct even for
    * a session this process hasn't loaded yet - e.g. right after a restart,
