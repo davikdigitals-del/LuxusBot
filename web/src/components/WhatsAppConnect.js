@@ -17,6 +17,7 @@ const STATUS_TONE = { disconnected: 'neutral', connecting: 'amber', qr: 'amber',
  * number and one agent's own linked number - same flow, different endpoints.
  */
 export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, subtitle }) {
+  const isAgent = statusUrl.startsWith('/api/agent/');
   const [state, setState] = useState({ status: 'disconnected', qr: null, phoneNumber: null });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,11 +39,18 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
     const startedAt = Date.now();
     pollRef.current = setInterval(async () => {
       const data = await fetchStatus();
-      if (data && (data.status === 'connected' || data.status === 'qr')) {
+      if (data?.status === 'qr') {
         clearInterval(pollRef.current);
+      } else if (data?.status === 'disconnected') {
+        clearInterval(pollRef.current);
+        if (data.lastDisconnectReason) {
+          setError(`WhatsApp disconnected: ${data.lastDisconnectReason}`);
+        }
       } else if (Date.now() - startedAt >= 120000) {
-        clearInterval(pollRef.current);
-        setError('WhatsApp did not provide a QR code. Please try again.');
+        if (data?.status !== 'connected') {
+          clearInterval(pollRef.current);
+          setError('WhatsApp did not connect or provide a QR code. Check the API service logs, then retry.');
+        }
       }
     }, 2000);
   }, [fetchStatus]);
@@ -50,7 +58,7 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
   useEffect(() => {
     let cancelled = false;
     fetchStatus().then((data) => {
-      if (!cancelled && data?.status === 'connecting') startPolling();
+      if (!cancelled && (data?.status === 'connecting' || data?.status === 'connected')) startPolling();
     });
     return () => {
       cancelled = true;
@@ -118,6 +126,20 @@ export default function WhatsAppConnect({ statusUrl, connectUrl, disconnectUrl, 
             {state.phoneNumber && <span className="text-sm text-ink-700">{state.phoneNumber}</span>}
           </div>
           {subtitle && <p className="mt-1 text-sm text-ink-600">{subtitle}</p>}
+          {state.lastInboundAt && (
+            <p className="mt-2 text-xs text-ink-600">
+              Last WhatsApp message received by the server: {new Date(state.lastInboundAt).toLocaleString()}
+              {state.lastInboundType ? ` · ${state.lastInboundType}` : ''}
+            </p>
+          )}
+          {state.status === 'connected' && !state.lastInboundAt && (
+            <p className="mt-2 text-xs text-ink-600">
+              Connected, but no {isAgent ? 'agent self-chat messages' : 'incoming customer messages'} have been recorded by the server yet.
+            </p>
+          )}
+          {state.lastDisconnectReason && state.status !== 'connected' && (
+            <p className="mt-2 break-words text-xs text-signal-red">Last connection issue: {state.lastDisconnectReason}</p>
+          )}
         </div>
         {state.status === 'connected' ? (
           <Button className="w-full sm:w-auto" variant="danger" onClick={onDisconnect} disabled={busy}>Disconnect</Button>
