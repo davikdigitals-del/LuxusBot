@@ -72,6 +72,9 @@ class EmailService {
       host: email?.host || 'smtp.gmail.com',
       port: email?.port || 587,
       secure: email?.port === 465,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
       auth: {
         user: email?.user,
         pass: email?.password
