@@ -1,0 +1,16 @@
+diff --git a/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js b/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js
+index e9d112c..3147eaf 100644
+--- a/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js
++++ b/node_modules/@whiskeysockets/baileys/lib/Socket/socket.js
+@@ -238,6 +238,11 @@ const makeSocket = (config) => {
+                     logger.debug({ unhandled: true, msgId, fromMe: false, frame }, 'communication recv');
+                 }
+             }
++        }).catch((error) => {
++            logger.error({ error }, 'failed to decode incoming WhatsApp frame');
++            return end(error).catch((endError) => {
++                logger.error({ error: endError }, 'failed to close socket after WhatsApp frame error');
++            });
+         });
+     };
+     const end = (error) => {
