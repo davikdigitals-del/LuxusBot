@@ -2,10 +2,12 @@ import express from 'express';
 import { User, Business } from '../models/index.js';
 import authService from '../services/authService.js';
 import googleAuthService from '../services/googleAuthService.js';
+import socialAuthService from '../services/socialAuthService.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import { authLimiters } from '../middleware/rateLimit.js';
 import logger from '../utils/logger.js';
 import { sha256 } from '../utils/crypto.js';
+import config from '../config/index.js';
 
 const router = express.Router();
 
@@ -164,6 +166,78 @@ router.post('/google', authLimiters.login, async (req, res) => {
       success: false,
       error: status === 503 ? error.message : 'Google sign-in failed. Please try again.',
     });
+  }
+});
+
+const oauthCookieName = (provider) => `luxus_${provider}_oauth_state`;
+const oauthRedirectUri = (provider) => `${config.apiUrl.replace(/\/+$/, '')}/api/auth/${provider}/callback`;
+const loginRedirect = (error) => {
+  const target = new URL('/login', config.appUrl);
+  if (error) target.searchParams.set('social_error', error);
+  return target.toString();
+};
+
+const parseCookie = (header, name) => {
+  const item = String(header || '').split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  return item ? decodeURIComponent(item.slice(name.length + 1)) : '';
+};
+
+const clearOAuthStateCookie = (res, provider) => {
+  const secure = config.node_env === 'production' ? '; Secure' : '';
+  res.append('Set-Cookie', `${oauthCookieName(provider)}=; Path=/api/auth/${provider}/callback; Max-Age=0; HttpOnly; SameSite=Lax${secure}`);
+};
+
+for (const provider of ['github', 'discord']) {
+  router.get(`/${provider}`, (req, res) => {
+    try {
+      const state = socialAuthService.createState();
+      const secure = config.node_env === 'production' ? '; Secure' : '';
+      res.append(
+        'Set-Cookie',
+        `${oauthCookieName(provider)}=${encodeURIComponent(state)}; Path=/api/auth/${provider}/callback; Max-Age=600; HttpOnly; SameSite=Lax${secure}`
+      );
+      res.redirect(socialAuthService.getAuthorizationUrl(provider, state, oauthRedirectUri(provider)));
+    } catch (error) {
+      logger.warn(`${provider} OAuth start failed:`, error.message);
+      res.redirect(loginRedirect(provider));
+    }
+  });
+
+  router.get(`/${provider}/callback`, async (req, res) => {
+    clearOAuthStateCookie(res, provider);
+    try {
+      const state = typeof req.query.state === 'string' ? req.query.state : '';
+      const cookieState = parseCookie(req.headers.cookie, oauthCookieName(provider));
+      if (!state || !cookieState || state !== cookieState) {
+        return res.redirect(loginRedirect(provider));
+      }
+      if (typeof req.query.error === 'string' || typeof req.query.code !== 'string') {
+        return res.redirect(loginRedirect(provider));
+      }
+
+      const profile = await socialAuthService.fetchProfile(provider, req.query.code, oauthRedirectUri(provider));
+      const ticket = socialAuthService.createOAuthTicket(profile);
+      const target = new URL('/login', config.appUrl);
+      target.hash = new URLSearchParams({ social_ticket: ticket }).toString();
+      return res.redirect(target.toString());
+    } catch (error) {
+      logger.warn(`${provider} OAuth callback failed:`, error.message);
+      return res.redirect(loginRedirect(provider));
+    }
+  });
+}
+
+router.post('/social/complete', authLimiters.login, async (req, res) => {
+  try {
+    const result = await socialAuthService.completeLogin(
+      req.body?.ticket,
+      req.ip || req.connection.remoteAddress,
+      req.headers['user-agent']
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    logger.warn('Social sign-in failed:', error.message);
+    res.status(401).json({ success: false, error: 'Social sign-in failed or expired. Please try again.' });
   }
 });
 

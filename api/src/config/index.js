@@ -135,8 +135,19 @@ const configSchema = Joi.object({
 
   // Platform
   appUrl: Joi.string().uri().default('http://localhost:3001'),
+  apiUrl: Joi.string().uri().default('http://localhost:3000'),
   google: Joi.object({
     clientId: Joi.string().allow('').default(''),
+  }),
+  socialAuth: Joi.object({
+    github: Joi.object({
+      clientId: Joi.string().allow('').default(''),
+      clientSecret: Joi.string().allow('').default(''),
+    }),
+    discord: Joi.object({
+      clientId: Joi.string().allow('').default(''),
+      clientSecret: Joi.string().allow('').default(''),
+    }),
   }),
   trustProxy: Joi.boolean().default(false),
   enableLegacyWhatsApp: Joi.boolean().default(false),
@@ -268,8 +279,19 @@ const buildConfig = () => {
     },
 
     appUrl: process.env.APP_URL,
+    apiUrl: process.env.API_URL,
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID,
+    },
+    socialAuth: {
+      github: {
+        clientId: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+      },
+      discord: {
+        clientId: process.env.DISCORD_CLIENT_ID,
+        clientSecret: process.env.DISCORD_CLIENT_SECRET,
+      },
     },
     trustProxy: process.env.TRUST_PROXY === 'true',
     enableLegacyWhatsApp: process.env.ENABLE_LEGACY_WHATSAPP === 'true',

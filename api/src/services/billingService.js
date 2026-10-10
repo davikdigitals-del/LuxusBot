@@ -157,7 +157,7 @@ const cleanStr = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '
  * Step 1 of joining: the website form. Creates NO account - it only opens a Kora
  * checkout for the $60 plan. The account appears when the payment succeeds.
  */
-export async function startSignupCheckout({ email, firstName, lastName, businessName, plan: planId }) {
+export async function startSignupCheckout({ email, firstName, lastName, businessName, plan: planId, socialIdentity }) {
   const plan = planById(planId);
   if (!plan) throw new Error('Please choose a plan.');
   if (!isKoraConfigured() || !paymentChannels().length) throw new Error('Payments are not configured yet. Please try again later.');
@@ -179,7 +179,17 @@ export async function startSignupCheckout({ email, firstName, lastName, business
     email: cleanEmail,
     customerName: `${first} ${last}`,
     redirectUrl: `${config.appUrl}/welcome`,
-    metadata: { purpose: 'signup', plan: plan.id, businessName: business, firstName: first, lastName: last },
+    metadata: {
+      purpose: 'signup',
+      plan: plan.id,
+      businessName: business,
+      firstName: first,
+      lastName: last,
+      ...(socialIdentity ? {
+        socialProvider: socialIdentity.provider,
+        socialId: socialIdentity.providerId,
+      } : {}),
+    },
   });
 }
 
@@ -295,6 +305,8 @@ async function handleLegacyChargeSuccess(data) {
       paidAt,
       periodEnd: addMonths(paidAt, 1),
       limits: planLimits(plan),
+      socialProvider: md.socialProvider,
+      socialId: md.socialId,
     });
     emailService
       .sendAccountReadyEmail(user.email, user.firstName, created.name, user.passwordResetToken)
@@ -470,6 +482,8 @@ async function handleKoraChargeSuccess(data) {
       paidAt,
       periodEnd: addMonths(paidAt, 1),
       limits: planLimits(plan),
+      socialProvider: metadata.socialProvider,
+      socialId: metadata.socialId,
     });
     emailService
       .sendAccountReadyEmail(user.email, user.firstName, created.name, user.passwordResetToken)

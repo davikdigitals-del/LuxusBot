@@ -15,6 +15,16 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
   },
+  githubId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+  discordId: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
   password: {
     type: String,
     required: true,

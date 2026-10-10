@@ -70,13 +70,33 @@ class AuthService {
    * Only called after verified payment - there is no public paid sign-up.
    * The user gets a random password they never see and a 7-day link to set their own.
    */
-  async createPaidAccount({ email, firstName, lastName, businessName, plan, paymentProvider = 'legacy', paystackCustomerCode, paymentReference, paidAt, periodEnd, limits }) {
+  async createPaidAccount({
+    email,
+    firstName,
+    lastName,
+    businessName,
+    plan,
+    paymentProvider = 'legacy',
+    paystackCustomerCode,
+    paymentReference,
+    paidAt,
+    periodEnd,
+    limits,
+    socialProvider,
+    socialId,
+  }) {
     const existing = await User.findByEmail(email);
     if (existing) throw new Error('Email already registered');
 
+    const socialIdFields = socialProvider === 'github'
+      ? { githubId: socialId }
+      : socialProvider === 'discord'
+        ? { discordId: socialId }
+        : {};
     const user = new User({
       email,
       password: crypto.randomBytes(24).toString('hex'),
+      ...socialIdFields,
       firstName: firstName || 'Customer',
       lastName: lastName || '-',
       status: 'active',

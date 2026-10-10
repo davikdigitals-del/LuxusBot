@@ -6,6 +6,7 @@ import {
   verifyLegacyWebhookSignature, handleLegacyPaymentEvent, verifyKoraSignature, handleKoraEvent,
 } from '../services/billingService.js';
 import googleAuthService from '../services/googleAuthService.js';
+import socialAuthService from '../services/socialAuthService.js';
 import config from '../config/index.js';
 import logger from '../utils/logger.js';
 
@@ -56,6 +57,29 @@ router.post('/google-signup', authLimiters.register, async (req, res) => {
     res.json({ success: true, url: checkout.url });
   } catch (error) {
     logger.warn('Google signup checkout error:', error.message);
+    res.status(400).json({ success: false, error: error.message || 'Could not start checkout' });
+  }
+});
+
+router.post('/social-signup', authLimiters.register, async (req, res) => {
+  try {
+    const { ticket, businessName, plan } = req.body || {};
+    if (![ticket, businessName, plan].every((value) => typeof value === 'string' && value.trim())) {
+      return res.status(400).json({ success: false, error: 'Social sign-in, business name, and plan are required' });
+    }
+
+    const profile = socialAuthService.verifySignupTicket(ticket);
+    const checkout = await startSignupCheckout({
+      email: profile.email,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      businessName,
+      plan,
+      socialIdentity: { provider: profile.provider, providerId: profile.providerId },
+    });
+    res.json({ success: true, url: checkout.url });
+  } catch (error) {
+    logger.warn('Social signup checkout error:', error.message);
     res.status(400).json({ success: false, error: error.message || 'Could not start checkout' });
   }
 });
