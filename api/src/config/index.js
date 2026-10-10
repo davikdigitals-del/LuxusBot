@@ -278,8 +278,8 @@ const buildConfig = () => {
       graceDays: num(process.env.BILLING_GRACE_DAYS),
     },
 
-    appUrl: process.env.APP_URL,
-    apiUrl: process.env.API_URL,
+    appUrl: process.env.APP_URL || (process.env.NODE_ENV === 'production' ? 'https://luxusbot-oo3c.onrender.com' : undefined),
+    apiUrl: process.env.API_URL || (process.env.NODE_ENV === 'production' ? 'https://luxus-api.onrender.com' : undefined),
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID,
     },

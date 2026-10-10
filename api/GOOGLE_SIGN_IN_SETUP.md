@@ -27,6 +27,7 @@ The normal signup payment is unchanged: for a new Google account, enter the work
 GitHub and Discord sign-in are also available on the login and registration pages. Configure these values on the **API service**:
 
 ```env
+APP_URL=https://luxusbot-oo3c.onrender.com
 API_URL=https://luxus-api.onrender.com
 GITHUB_CLIENT_ID=your-github-oauth-client-id
 GITHUB_CLIENT_SECRET=your-github-oauth-client-secret
