@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/AuthContext';
 import AuthShell from '@/components/AuthShell';
 import AuthField from '@/components/AuthField';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
+import SocialSignInButtons from '@/components/SocialSignInButtons';
 import { PLANS } from '@/lib/plans';
 import { IconBuilding, IconMail, IconSpinner, IconUser } from '@/components/icons';
 
@@ -28,6 +29,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [googleCredential, setGoogleCredential] = useState('');
+  const [socialSignup, setSocialSignup] = useState(null);
 
   const update = (name) => (event) => setForm((current) => ({ ...current, [name]: event.target.value }));
 
@@ -62,13 +64,38 @@ export default function RegisterPage() {
     if (credential) onGoogleCredential(credential);
   }, [consumePendingGoogleCredential, onGoogleCredential, pendingGoogleCredential]);
 
+  useEffect(() => {
+    const stored = sessionStorage.getItem('luxus_social_signup');
+    if (!stored) return;
+    sessionStorage.removeItem('luxus_social_signup');
+    try {
+      const signup = JSON.parse(stored);
+      if (!signup.ticket || !signup.profile?.email) throw new Error('Invalid social signup data');
+      setSocialSignup(signup);
+      setForm((current) => ({
+        ...current,
+        email: signup.profile.email,
+        firstName: signup.profile.firstName || current.firstName,
+        lastName: signup.profile.lastName || current.lastName,
+      }));
+    } catch {
+      setError('Social sign-in expired. Please try again.');
+    }
+  }, []);
+
   const onSubmit = async (event) => {
     event.preventDefault();
     setError('');
     setSubmitting(true);
 
     try {
-      const result = googleCredential
+      const result = socialSignup
+        ? await api.post('/api/billing/social-signup', {
+          ticket: socialSignup.ticket,
+          businessName: form.businessName,
+          plan: form.plan,
+        }, { skipAuth: true })
+        : googleCredential
         ? await api.post('/api/billing/google-signup', {
           credential: googleCredential,
           firstName: form.firstName,
@@ -111,13 +138,13 @@ export default function RegisterPage() {
           type="email"
           autoComplete="email"
           required
-          readOnly={Boolean(googleCredential)}
+          readOnly={Boolean(googleCredential || socialSignup)}
           value={form.email}
           onChange={update('email')}
         />
-        {googleCredential && (
+        {(googleCredential || socialSignup) && (
           <p className="-mt-2 text-xs text-ink-600">
-            Google verified this address. Select a plan and complete payment to create your account.
+            {socialSignup ? 'Your email was verified by your social provider.' : 'Google verified this address.'} Select a plan and complete payment to create your account.
           </p>
         )}
 
@@ -157,6 +184,7 @@ export default function RegisterPage() {
         onCredential={onGoogleCredential}
         onError={setError}
       />
+      <SocialSignInButtons />
 
       <p className="mt-7 text-center text-sm text-ink-600">
         Already have an account?{' '}

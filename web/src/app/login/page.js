@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import api, { ApiError } from '@/lib/api';
 import AuthShell from '@/components/AuthShell';
 import AuthField from '@/components/AuthField';
 import GoogleSignInButton from '@/components/GoogleSignInButton';
+import SocialSignInButtons from '@/components/SocialSignInButtons';
 import { IconMail, IconLock, IconSpinner } from '@/components/icons';
 
 export default function LoginPage() {
@@ -17,6 +19,44 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const socialTicketHandled = useRef(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const ticket = params.get('social_ticket');
+    const search = new URLSearchParams(window.location.search);
+    const socialError = search.get('social_error');
+    if (socialTicketHandled.current) return;
+    if (ticket) window.history.replaceState(null, '', window.location.pathname);
+    if (socialError) setError(`${socialError === 'github' ? 'GitHub' : 'Discord'} sign-in failed. Please try again.`);
+    if (!ticket) return;
+    socialTicketHandled.current = true;
+
+    let cancelled = false;
+    setSubmitting(true);
+    api.post('/api/auth/social/complete', { ticket }, { skipAuth: true })
+      .then(async (result) => {
+        if (cancelled) return;
+        if (!result.registered) {
+          sessionStorage.setItem('luxus_social_signup', JSON.stringify({
+            ticket: result.signupTicket,
+            profile: result.profile,
+          }));
+          router.push('/register');
+          return;
+        }
+        await completeLogin(result);
+        router.push(result.requiresPayment ? '/dashboard/billing' : '/dashboard');
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Social sign-in failed. Please try again.');
+      })
+      .finally(() => {
+        if (!cancelled) setSubmitting(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [completeLogin, router]);
 
   const onGoogleCredential = async (credential) => {
     setError('');
@@ -112,6 +152,7 @@ export default function LoginPage() {
         onCredential={onGoogleCredential}
         onError={setError}
       />
+      <SocialSignInButtons />
 
       <p className="mt-8 text-center text-sm text-ink-600">
         New to Luxus Bot?{' '}
